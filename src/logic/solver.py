@@ -55,3 +55,21 @@ def print_board(board):
                 print(board[i][j])
             else:
                 print(str(board[i][j]) + " ", end="")
+
+def is_valid_board(board):
+    for row in range(9):
+        for col in range(9):
+            num = board[row][col]
+            
+            if num == 0:
+                continue
+
+            board[row][col] = 0
+
+            if not is_valid(board, num, (row, col)):
+                board[row][col] = num
+                return False
+            
+            board[row][col] = num
+            
+    return True
