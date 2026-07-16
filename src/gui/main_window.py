@@ -1,10 +1,12 @@
 from PySide6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
-    QLabel, QMenuBar, QMessageBox, QPushButton
+    QLabel, QMenuBar, QMessageBox, QPushButton,
+    QHBoxLayout, QComboBox
 )
 from PySide6.QtCore import Qt
 from src.gui.sudoku_widget import SudokuWidget
 from src.logic.solver import solve, is_valid_board
+from src.logic.generator import generate_sudoku
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -23,12 +25,114 @@ class MainWindow(QMainWindow):
         game_widget = QWidget()
         layout = QVBoxLayout(game_widget)
 
-        label = QLabel("Поле для игры\n(Генератор + Игрок)")
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("font-size: 20px; color: gray;")
-        layout.addWidget(label)
+        top_panel = QHBoxLayout()
+        difficulty_label = QLabel("Выберите сложность:")
+        difficulty_label.setStyleSheet("font-size: 16px;")
+        top_panel.addWidget(difficulty_label)
 
-        self.tabs.addTab(game_widget, "Игра")
+        self.difficulty_combo = QComboBox()
+        self.difficulty_combo.addItems(["Легкий", "Средний", "Сложный"])
+        self.difficulty_combo.setStyleSheet("font-size: 16px; padding: 5px;")
+        top_panel.addWidget(self.difficulty_combo)
+
+        top_panel.addStretch()
+        layout.addLayout(top_panel)
+        
+        self.game_grid = SudokuWidget()
+        layout.addWidget(self.game_grid)
+        
+        bottom_panel = QHBoxLayout()
+        
+        new_game_button = QPushButton("🎲 Новая игра")
+        new_game_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-size: 14px;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0b7dda;
+            }
+        """)
+        new_game_button.clicked.connect(self._new_game)
+        bottom_panel.addWidget(new_game_button)
+        
+        check_button = QPushButton("✓ Проверить")
+        check_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-size: 14px;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        check_button.clicked.connect(self._check_solution)
+        bottom_panel.addWidget(check_button)
+        
+        layout.addLayout(bottom_panel)
+        
+        self.tabs.addTab(game_widget, "🎮 Игра")
+
+    def _new_game(self):
+        self.game_grid.reset_board()
+        difficulty_index = self.difficulty_combo.currentIndex()
+        difficulty_map = {0: 'easy', 1: 'medium', 2: 'hard'}
+        difficulty = difficulty_map[difficulty_index]
+        
+        puzzle, solution = generate_sudoku(difficulty)
+        
+        self.current_solution = solution
+        
+        self.game_grid.set_board(puzzle)
+        
+        for row in range(9):
+            for col in range(9):
+                if puzzle[row][col] != 0:
+                    self.game_grid.fixed[row][col] = True
+        
+        self.game_grid.update()
+        
+        QMessageBox.information(
+            self, 
+            "Новая игра", 
+            f"Сгенерирована новая игра!\nУровень сложности: {self.difficulty_combo.currentText()}\n\nУдачи!"
+        )
+
+    def _check_solution(self):
+        if self.current_solution is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала начните новую игру!")
+            return
+        
+        current_board = self.game_grid.get_board()
+        
+        for row in range(9):
+            for col in range(9):
+                if current_board[row][col] == 0:
+                    QMessageBox.warning(
+                        self, 
+                        "Не завершено", 
+                        "Заполните все клетки перед проверкой!"
+                    )
+                    return
+        
+        if current_board == self.current_solution:
+            QMessageBox.information(
+                self, 
+                "Поздравляем!", 
+                "🎉 Вы решили судоку правильно!\n\nОтличная работа!"
+            )
+        else:
+            QMessageBox.warning(
+                self, 
+                "Неверно", 
+                "Решение неверное.\n\nПроверьте свои ответы и попробуйте еще раз!"
+            )
 
     def _create_solver_tab(self):
         solver_widget = QWidget()

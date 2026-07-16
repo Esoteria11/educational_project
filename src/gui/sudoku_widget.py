@@ -6,13 +6,19 @@ class SudokuWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setFocusPolicy(Qt.StrongFocus  )
+        self.setFocusPolicy(Qt.StrongFocus)
 
         self.setMinimumSize(450, 450)
         self.board = [[0 for _ in range(9)] for _ in range(9)]
         self.fixed = [[False for _ in range(9)] for _ in range(9)]
         self.selected_cell = None
         self.cell_size = 0
+
+    def reset_board(self):
+        self.board = [[0 for _ in range(9)] for _ in range(9)]
+        self.fixed = [[False for _ in range(9)] for _ in range(9)]
+        self.selected_cell = None
+        self.update()
 
     def set_board(self, board):
         self.board = [row[:] for row in board]
@@ -92,6 +98,7 @@ class SudokuWidget(QWidget):
             
             if 0 <= row < 9 and 0 <= col < 9:
                 self.selected_cell = (row, col)
+                self.setFocus()
                 self.update()
 
     def keyPressEvent(self, event):
