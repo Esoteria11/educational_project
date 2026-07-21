@@ -12,8 +12,8 @@ class SudokuWidget(QWidget):
         super().__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumSize(450, 450)
-        self.setMaximumSize(550, 550)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMaximumSize(600, 600)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.board = [[0 for _ in range(9)] for _ in range(9)]
         self.fixed = [[False for _ in range(9)] for _ in range(9)]
         self.selected_cell = None
@@ -172,7 +172,7 @@ class SudokuWidget(QWidget):
         painter.fillRect(x, y, int(self.cell_size), int(self.cell_size), QColor(173, 216, 230, 200))
 
         if (sel_row, sel_col) in self.errors and selected_num != 0:
-            conflict_color = QColor(255, 205, 210, 180)
+            conflict_color = QColor(255, 200, 200, 200)
             for c in range(9):
                 if c != sel_col and self.board[sel_row][c] == selected_num:
                     x = int(offset_x + c * self.cell_size)
@@ -199,7 +199,7 @@ class SudokuWidget(QWidget):
                 if num != 0:
                     is_error = (row, col) in self.errors
                     if is_error:
-                        painter.setPen(QColor(220, 50, 50))
+                        painter.setPen(QColor(255, 0, 0))
                     elif self.fixed[row][col]:
                         painter.setPen(QColor(30, 30, 30))
                     else:
@@ -224,6 +224,15 @@ class SudokuWidget(QWidget):
             if counts[num] < 9:
                 remaining.append(num)
         return remaining
+    
+    def get_numbers_count(self):
+        counts = {i: 0 for i in range(1, 10)}
+        for row in range(9):
+            for col in range(9):
+                num = self.board[row][col]
+                if num != 0:
+                    counts[num] += 1
+        return counts
         
     def mousePressEvent(self, event):
         if self.is_game_over:
@@ -257,8 +266,33 @@ class SudokuWidget(QWidget):
                         self.errors.remove((row, col))
                     self.update()
                     self.board_changed.emit()
+        
+        key = event.key()
+        if key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+            self._move_selection(key)
+                    
+    def _move_selection(self, key):
+        if not self.selected_cell:
+            self.selected_cell = (0, 0)
+            self.update()
+            return
+            
+        row, col = self.selected_cell
+        if key == Qt.Key_Up:
+            row = max(0, row - 1)
+        elif key == Qt.Key_Down:
+            row = min(8, row + 1)
+        elif key == Qt.Key_Left:
+            col = max(0, col - 1)
+        elif key == Qt.Key_Right:
+            col = min(8, col + 1)
+            
+        self.selected_cell = (row, col)
+        self.update()
                     
     def _try_set_number(self, row, col, num):
+        if self.solution and self.board[row][col] == self.solution[row][col]:
+            return
         self.save_state()
         self.board[row][col] = num
         if self.is_game_mode and self.solution:
