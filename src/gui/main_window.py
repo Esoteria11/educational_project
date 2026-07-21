@@ -2,7 +2,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
     QLabel, QMenuBar, QMessageBox, QPushButton,
     QHBoxLayout, QRadioButton, QButtonGroup, QDialog, QDialogButtonBox,
-    QListWidget, QListWidgetItem, QLineEdit, QSizePolicy, QGridLayout
+    QListWidget, QListWidgetItem, QLineEdit, QSizePolicy, QGridLayout,
+    QTextBrowser
 )
 from PySide6.QtCore import Qt, QTime, QTimer
 from src.gui.sudoku_widget import SudokuWidget
@@ -15,7 +16,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Судоку")
-        self.resize(1000, 700)
+        self.resize(1100, 750)
+        self.setMinimumSize(900, 700)
+        self.setMaximumSize(1600, 1200)
         self.setStyleSheet("background-color: white;")
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
@@ -59,7 +62,7 @@ class MainWindow(QMainWindow):
                     self.best_time = records[0]['time']
                     minutes = self.best_time // 60
                     seconds = self.best_time % 60
-                    self.best_time_label.setText(f"{minutes:02d}:{seconds:02d}")
+                    self.best_time_label.setText(f"🏆 Рекорд: {minutes:02d}:{seconds:02d}")
             except:
                 pass
                 
@@ -74,105 +77,136 @@ class MainWindow(QMainWindow):
     def _create_game_tab(self):
         game_widget = QWidget()
         main_layout = QHBoxLayout(game_widget)
+        main_layout.setSpacing(40)
+        main_layout.setContentsMargins(40, 40, 40, 40)
         
         left_panel = QWidget()
+        left_panel.setMaximumWidth(700)
+        left_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(20, 20, 20, 20)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         
-        top_info = QHBoxLayout()
-        self.best_time_label = QLabel("00:00")
-        self.best_time_label.setStyleSheet("font-size: 16px; color: #424242; font-weight: bold;")
-        top_info.addWidget(QLabel("Рекорд:"))
-        top_info.addWidget(self.best_time_label)
-        top_info.addStretch()
-        left_layout.addLayout(top_info)
+        top_layout = QHBoxLayout()
+        top_layout.setSpacing(20)
+        
+        self.best_time_label = QLabel("🏆 Рекорд: 00:00")
+        self.best_time_label.setStyleSheet("font-size: 24px; color: #757575;")
+        top_layout.addWidget(self.best_time_label)
+        top_layout.addStretch()
+        
+        level_label = QLabel("Уровень:")
+        level_label.setStyleSheet("font-size: 20px; color: #424242; font-weight: bold;")
+        top_layout.addWidget(level_label)
         
         self.difficulty_group = QButtonGroup()
         self.easy_radio = QRadioButton("Лёгкий")
         self.medium_radio = QRadioButton("Средний")
         self.hard_radio = QRadioButton("Сложный")
         
-        self.easy_radio.setStyleSheet("color: #424242; font-size: 13px;")
-        self.medium_radio.setStyleSheet("color: #424242; font-size: 13px;")
-        self.hard_radio.setStyleSheet("color: #424242; font-size: 13px;")
-        
-        self.difficulty_group.addButton(self.easy_radio, 0)
-        self.difficulty_group.addButton(self.medium_radio, 1)
-        self.difficulty_group.addButton(self.hard_radio, 2)
-        
-        diff_layout = QHBoxLayout()
-        diff_layout.addWidget(QLabel("Уровень:"))
-        diff_layout.addWidget(self.easy_radio)
-        diff_layout.addWidget(self.medium_radio)
-        diff_layout.addWidget(self.hard_radio)
-        left_layout.addLayout(diff_layout)
-        
-        left_layout.addStretch()
+        for radio in (self.easy_radio, self.medium_radio, self.hard_radio):
+            radio.setStyleSheet("""
+                QRadioButton {
+                    color: #424242;
+                    font-size: 15px;
+                    spacing: 6px;
+                }
+                QRadioButton::indicator {
+                    width: 16px;
+                    height: 16px;
+                }
+            """)
+            self.difficulty_group.addButton(radio)
+            top_layout.addWidget(radio)
+
+        self.medium_radio.setChecked(True)
+        left_layout.addLayout(top_layout)
         
         self.game_grid = SudokuWidget()
+        self.game_grid.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.game_grid.error_made.connect(self._on_error_made)
         self.game_grid.game_over.connect(self._on_game_over)
         self.game_grid.hints_used.connect(self._on_hints_used)
         self.game_grid.board_changed.connect(self._update_remaining_numbers)
-        self.game_grid.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        left_layout.addWidget(self.game_grid, stretch=1)
+        left_layout.addWidget(self.game_grid, stretch=1, alignment=Qt.AlignCenter)
         
-        numbers_layout = QHBoxLayout()
-        numbers_layout.setSpacing(5)
-        self.remaining_number_buttons = []
+        remaining_layout = QHBoxLayout()
+        remaining_layout.setSpacing(8)
+        remaining_layout.setAlignment(Qt.AlignCenter)
+        self.remaining_indicators = []
+        
         for i in range(1, 10):
-            btn = QPushButton(str(i))
-            btn.setFixedSize(40, 50)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    border: 2px solid #2979ff;
+            indicator = QLabel()
+            indicator.setFixedSize(40, 40)
+            indicator.setAlignment(Qt.AlignCenter)
+            indicator.setStyleSheet("""
+                QLabel {
+                    background-color: #f5f7fa;
                     border-radius: 8px;
-                    font-size: 24px;
+                    font-size: 18px;
                     color: #2979ff;
                     font-weight: bold;
                 }
-                QPushButton:disabled {
-                    border: 2px solid #e0e0e0;
-                    color: #e0e0e0;
-                }
             """)
-            btn.setEnabled(False)
-            numbers_layout.addWidget(btn)
-            self.remaining_number_buttons.append(btn)
+            remaining_layout.addWidget(indicator)
+            self.remaining_indicators.append(indicator)
         
-        left_layout.addLayout(numbers_layout)
-        
+        left_layout.addLayout(remaining_layout)
         main_layout.addWidget(left_panel, stretch=2)
         
         right_panel = QWidget()
-        right_panel.setMaximumWidth(300)
+        right_panel.setMaximumWidth(320)
+        right_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(10, 20, 20, 20)
+        right_layout.setContentsMargins(0, 20, 0, 20)
+        right_layout.setSpacing(25)
         
-        top_stats = QHBoxLayout()
-        self.errors_label = QLabel("Ошибки\n1/3")
-        self.errors_label.setStyleSheet("font-size: 18px; color: #424242;")
-        self.errors_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        top_stats.addWidget(self.errors_label)
-        top_stats.addStretch()
-        self.timer_label = QLabel("Время\n00:00")
-        self.timer_label.setStyleSheet("font-size: 18px; color: #424242;")
-        self.timer_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        top_stats.addWidget(self.timer_label)
-        right_layout.addLayout(top_stats)
+        stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(40)
+        stats_layout.addSpacing(70)
+
+        time_widget = QWidget()
+        time_layout = QVBoxLayout(time_widget)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        time_layout.setSpacing(2)
+        self.time_value_label = QLabel("00:00")
+        self.time_value_label.setStyleSheet("font-size: 32px; color: #424242; font-weight: bold;")
+        self.time_value_label.setAlignment(Qt.AlignCenter)
+        time_title_label = QLabel("Время")
+        time_title_label.setStyleSheet("font-size: 18px; color: #757575;")
+        time_title_label.setAlignment(Qt.AlignCenter)
+        time_layout.addWidget(self.time_value_label)
+        time_layout.addWidget(time_title_label)
+        stats_layout.addWidget(time_widget)
+
+        errors_widget = QWidget()
+        errors_layout = QVBoxLayout(errors_widget)
+        errors_layout.setContentsMargins(0, 0, 0, 0)
+        errors_layout.setSpacing(2)
+        self.errors_value_label = QLabel("0/3")
+        self.errors_value_label.setStyleSheet("font-size: 32px; color: #424242; font-weight: bold;")
+        self.errors_value_label.setAlignment(Qt.AlignCenter)
+        errors_title_label = QLabel("Ошибки")
+        errors_title_label.setStyleSheet("font-size: 18px; color: #757575;")
+        errors_title_label.setAlignment(Qt.AlignCenter)
+        errors_layout.addWidget(self.errors_value_label)
+        errors_layout.addWidget(errors_title_label)
+        stats_layout.addWidget(errors_widget)
+        stats_layout.addStretch()
+        right_layout.addLayout(stats_layout)
         
-        icon_layout = QHBoxLayout()
+        tools_layout = QHBoxLayout()
+        tools_layout.setSpacing(15)
+        tools_layout.addSpacing(30)
         
         undo_btn = QPushButton("↺")
         undo_btn.setToolTip("Отмена")
-        undo_btn.setFixedSize(60, 60)
+        undo_btn.setFixedSize(75, 65)
         undo_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f5f5f5;
                 border: none;
-                border-radius: 30px;
-                font-size: 24px;
+                border-radius: 12px;
+                font-size: 28px;
                 color: #424242;
             }
             QPushButton:hover {
@@ -180,17 +214,17 @@ class MainWindow(QMainWindow):
             }
         """)
         undo_btn.clicked.connect(self._undo)
-        icon_layout.addWidget(undo_btn)
+        tools_layout.addWidget(undo_btn)
         
         clear_btn = QPushButton("⌫")
         clear_btn.setToolTip("Очистить")
-        clear_btn.setFixedSize(60, 60)
+        clear_btn.setFixedSize(75, 65)
         clear_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f5f5f5;
                 border: none;
-                border-radius: 30px;
-                font-size: 24px;
+                border-radius: 12px;
+                font-size: 26px;
                 color: #424242;
             }
             QPushButton:hover {
@@ -198,62 +232,83 @@ class MainWindow(QMainWindow):
             }
         """)
         clear_btn.clicked.connect(self._clear_cell)
-        icon_layout.addWidget(clear_btn)
+        tools_layout.addWidget(clear_btn)
+
+        hint_container = QWidget()
+        hint_container_layout = QHBoxLayout(hint_container)
+        hint_container_layout.setContentsMargins(0, 0, 0, 0)
+        hint_container_layout.setSpacing(0)
         
-        icon_layout.addStretch()
-        
-        hint_btn = QPushButton("")
-        hint_btn.setToolTip("Подсказка")
-        hint_btn.setFixedSize(60, 60)
-        hint_btn.setStyleSheet("""
+        self.hint_button = QPushButton("💡")
+        self.hint_button.setToolTip("Подсказка")
+        self.hint_button.setFixedSize(75, 65)
+        self.hint_button.setStyleSheet("""
             QPushButton {
                 background-color: #f5f5f5;
                 border: none;
-                border-radius: 30px;
-                font-size: 24px;
+                border-radius: 12px;
+                font-size: 26px;
                 color: #424242;
             }
             QPushButton:hover {
                 background-color: #e0e0e0;
             }
         """)
-        hint_btn.clicked.connect(self._use_hint)
-        icon_layout.addWidget(hint_btn)
-        self.hint_button = hint_btn
+        self.hint_button.clicked.connect(self._use_hint)
+        hint_container_layout.addWidget(self.hint_button)
+        
         self.hint_badge = QLabel("3")
         self.hint_badge.setStyleSheet("""
             QLabel {
                 background-color: #2979ff;
                 color: white;
-                border-radius: 10px;
-                padding: 2px 6px;
+                border-radius: 9px;
                 font-size: 11px;
                 font-weight: bold;
+                min-width: 18px;
+                min-height: 18px;
+                max-width: 18px;
+                max-height: 18px;
+                padding: 0px;
+                qproperty-alignment: AlignCenter;
             }
         """)
-        icon_layout.addWidget(self.hint_badge)
+        self.hint_badge.setAlignment(Qt.AlignCenter)
+        badge_widget = QWidget()
+        badge_widget.setFixedSize(18, 18)
+        badge_layout = QHBoxLayout(badge_widget)
+        badge_layout.setContentsMargins(0, 0, 0, 0)
+        badge_layout.addWidget(self.hint_badge)
+        hint_container_layout.addWidget(badge_widget)
+        hint_container_layout.addStretch()
         
-        right_layout.addLayout(icon_layout)
+        tools_layout.addWidget(hint_container)
+        tools_layout.addStretch()
+        right_layout.addLayout(tools_layout)
         
         number_grid = QGridLayout()
-        number_grid.setSpacing(10)
+        number_grid.setSpacing(12)
         self.number_buttons = []
+        
         for i in range(1, 10):
             row = (i - 1) // 3
             col = (i - 1) % 3
             btn = QPushButton(str(i))
-            btn.setFixedSize(80, 70)
+            btn.setFixedSize(75, 65)
             btn.setStyleSheet("""
                 QPushButton {
                     background-color: #f5f7fa;
                     border: none;
-                    border-radius: 8px;
-                    font-size: 28px;
+                    border-radius: 10px;
+                    font-size: 26px;
                     color: #2979ff;
                     font-weight: bold;
                 }
                 QPushButton:hover {
                     background-color: #e3f2fd;
+                }
+                QPushButton:pressed {
+                    background-color: #bbdefb;
                 }
             """)
             btn.clicked.connect(lambda checked, num=i: self._input_number(num))
@@ -268,10 +323,10 @@ class MainWindow(QMainWindow):
             QPushButton {
                 background-color: #5c7cda;
                 color: white;
-                font-size: 16px;
-                padding: 15px;
+                font-size: 17px;
+                padding: 15px 30px;
                 border: none;
-                border-radius: 8px;
+                border-radius: 10px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -282,15 +337,13 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(new_game_btn)
         
         main_layout.addWidget(right_panel, stretch=1)
-        
         self.tabs.addTab(game_widget, "Игра")
         
     def _create_solver_tab(self):
         solver_widget = QWidget()
         layout = QVBoxLayout(solver_widget)
         self.sudoku_grid = SudokuWidget()
-        self.sudoku_grid.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.sudoku_grid, stretch=1)
+        layout.addWidget(self.sudoku_grid, stretch=1, alignment=Qt.AlignCenter)
         
         solve_btn = QPushButton("Решить")
         solve_btn.setStyleSheet("""
@@ -333,30 +386,32 @@ class MainWindow(QMainWindow):
         return 'Средний'
         
     def _update_remaining_numbers(self):
-        remaining = self.game_grid.get_remaining_numbers()
-        for i, btn in enumerate(self.remaining_number_buttons):
+        counts = self.game_grid.get_numbers_count()
+        for i, indicator in enumerate(self.remaining_indicators):
             num = i + 1
-            if num in remaining:
-                btn.setEnabled(True)
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: transparent;
-                        border: 2px solid #2979ff;
+            remaining = 9 - counts[num]
+            if remaining > 0:
+                indicator.setText(str(num))
+                indicator.setEnabled(True)
+                indicator.setStyleSheet("""
+                    QLabel {
+                        background-color: #f5f7fa;
                         border-radius: 8px;
-                        font-size: 24px;
+                        font-size: 18px;
                         color: #2979ff;
                         font-weight: bold;
                     }
                 """)
             else:
-                btn.setEnabled(False)
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: transparent;
-                        border: 2px solid #e0e0e0;
+                indicator.setText(str(num))
+                indicator.setEnabled(False)
+                indicator.setStyleSheet("""
+                    QLabel {
+                        background-color: #e0e0e0;
                         border-radius: 8px;
-                        font-size: 24px;
-                        color: #e0e0e0;
+                        font-size: 18px;
+                        color: #9e9e9e;
+                        font-weight: bold;
                     }
                 """)
             
@@ -368,8 +423,8 @@ class MainWindow(QMainWindow):
                 
     def _new_game(self):
         self.game_grid.reset_board()
-        self.timer_label.setText(f"Время\n00:00")
-        self.errors_label.setText(f"Ошибки\n0/3")
+        self.time_value_label.setText("00:00")
+        self.errors_value_label.setText("0/3")
         
         difficulty = self._get_difficulty()
         puzzle, solution = generate_sudoku(difficulty)
@@ -387,13 +442,14 @@ class MainWindow(QMainWindow):
         self.sudoku_grid.update()
         self._start_timer()
         self._update_remaining_numbers()
+        
         self.hint_button.setEnabled(True)
         self.hint_button.setStyleSheet("""
             QPushButton {
                 background-color: #f5f5f5;
                 border: none;
-                border-radius: 30px;
-                font-size: 24px;
+                border-radius: 12px;
+                font-size: 26px;
                 color: #424242;
             }
             QPushButton:hover {
@@ -405,10 +461,14 @@ class MainWindow(QMainWindow):
             QLabel {
                 background-color: #2979ff;
                 color: white;
-                border-radius: 10px;
-                padding: 2px 6px;
+                border-radius: 9px;
                 font-size: 11px;
                 font-weight: bold;
+                min-width: 18px;
+                min-height: 18px;
+                max-width: 18px;
+                max-height: 18px;
+                qproperty-alignment: AlignCenter;
             }
         """)
         
@@ -416,12 +476,17 @@ class MainWindow(QMainWindow):
         self.game_grid.undo()
         self._update_remaining_numbers()
         errors_count = 3 - self.game_grid.lives
-        self.errors_label.setText(f"Ошибки\n{errors_count}/3")
+        self.errors_value_label.setText(f"{errors_count}/3")
+        self.game_grid.setFocus()
         
     def _clear_cell(self):
         if self.game_grid.selected_cell:
             row, col = self.game_grid.selected_cell
             if not self.game_grid.fixed[row][col]:
+                if self.game_grid.solution and self.game_grid.board[row][col] == self.game_grid.solution[row][col]:
+                    self.game_grid.setFocus()
+                    return
+                    
                 self.game_grid.save_state()
                 self.game_grid.board[row][col] = 0
                 if (row, col) in self.game_grid.errors:
@@ -429,9 +494,13 @@ class MainWindow(QMainWindow):
                 self.game_grid.update()
                 self._update_remaining_numbers()
                 errors_count = 3 - self.game_grid.lives
-                self.errors_label.setText(f"Ошибки\n{errors_count}/3")
+                self.errors_value_label.setText(f"{errors_count}/3")
+                self.game_grid.setFocus()
                 
     def _use_hint(self):
+        if not self.game_grid.selected_cell:
+            QMessageBox.information(self, "Подсказка", "Сначала выберите клетку!")
+            return
         if self.game_grid.use_hint():
             self._update_remaining_numbers()
             self.hint_badge.setText(str(self.game_grid.hints_remaining))
@@ -441,11 +510,12 @@ class MainWindow(QMainWindow):
                     QPushButton {
                         background-color: #e0e0e0;
                         border: none;
-                        border-radius: 30px;
-                        font-size: 24px;
+                        border-radius: 12px;
+                        font-size: 26px;
                         color: #9e9e9e;
                     }
                 """)
+        self.game_grid.setFocus()
                 
     def _on_hints_used(self, remaining):
         self.hint_badge.setText(str(remaining))
@@ -455,8 +525,8 @@ class MainWindow(QMainWindow):
                 QPushButton {
                     background-color: #e0e0e0;
                     border: none;
-                    border-radius: 30px;
-                    font-size: 24px;
+                    border-radius: 12px;
+                    font-size: 26px;
                     color: #9e9e9e;
                 }
             """)
@@ -473,15 +543,36 @@ class MainWindow(QMainWindow):
             elapsed = self.game_start_time.secsTo(QTime.currentTime())
             minutes = elapsed // 60
             seconds = elapsed % 60
-            self.timer_label.setText(f"Время\n{minutes:02d}:{seconds:02d}")
+            self.time_value_label.setText(f"{minutes:02d}:{seconds:02d}")
             
     def _on_error_made(self, lives_left):
         errors_count = 3 - lives_left
-        self.errors_label.setText(f"Ошибки\n{errors_count}/3")
+        self.errors_value_label.setText(f"{errors_count}/3")
         if lives_left <= 0:
             if self.game_timer:
                 self.game_timer.stop()
             msg_box = QMessageBox(self)
+            msg_box.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                    color: black;
+                }
+                QMessageBox QLabel {
+                    color: black;
+                    font-size: 14px;
+                }
+                QMessageBox QPushButton {
+                    background-color: #5c7cda;
+                    color: white;
+                    padding: 8px 20px;
+                    border: none;
+                    border-radius: 4px;
+                    min-width: 100px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #4267c7;
+                }
+            """)
             msg_box.setIcon(QMessageBox.Icon.Critical)
             msg_box.setWindowTitle("Игра окончена")
             msg_box.setText("Вы сделали 3 ошибки")
@@ -502,16 +593,45 @@ class MainWindow(QMainWindow):
             
             if self.best_time is None or elapsed < self.best_time:
                 self.best_time = elapsed
-                self.best_time_label.setText(time_str)
+                self.best_time_label.setText(f"Рекорд: {time_str}")
             
             dialog = QDialog(self)
             dialog.setWindowTitle("Победа!")
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: white;
+                    color: black;
+                }
+                QLabel {
+                    color: black;
+                }
+                QLineEdit {
+                    background-color: white;
+                    color: black;
+                    border: 1px solid #ccc;
+                    padding: 5px;
+                }
+                QPushButton {
+                    background-color: #5c7cda;
+                    color: white;
+                    padding: 8px 20px;
+                    border: none;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #4267c7;
+                }
+            """)
             layout = QVBoxLayout(dialog)
             
             msg = QLabel(f"Поздравляем! Вы решили судоку!\nВремя: {time_str}")
+            msg.setStyleSheet("font-size: 16px; color: black;")
             layout.addWidget(msg)
             
-            layout.addWidget(QLabel("Введите ваше имя для таблицы рекордов:"))
+            name_label = QLabel("Введите ваше имя для таблицы рекордов:")
+            name_label.setStyleSheet("color: black;")
+            layout.addWidget(name_label)
+            
             name_input = QLineEdit()
             name_input.setPlaceholderText("Ваше имя")
             layout.addWidget(name_input)
@@ -546,9 +666,34 @@ class MainWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Таблица рекордов")
         dialog.resize(400, 400)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                color: black;
+            }
+            QLabel {
+                color: black;
+            }
+            QListWidget {
+                background-color: white;
+                color: black;
+                border: 1px solid #ccc;
+            }
+            QPushButton {
+                background-color: #5c7cda;
+                color: white;
+                padding: 8px;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #4267c7;
+            }
+        """)
         layout = QVBoxLayout(dialog)
         if not os.path.exists(records_file):
-            layout.addWidget(QLabel("Пока нет рекордов. Будьте первым!"))
+            no_records_label = QLabel("Пока нет рекордов. Будьте первым!")
+            layout.addWidget(no_records_label)
         else:
             try:
                 with open(records_file, 'r', encoding='utf-8') as f:
@@ -562,51 +707,12 @@ class MainWindow(QMainWindow):
                     list_widget.addItem(item)
                 layout.addWidget(list_widget)
             except:
-                layout.addWidget(QLabel("Ошибка загрузки рекордов"))
+                error_label = QLabel("Ошибка загрузки рекордов")
+                layout.addWidget(error_label)
         close_btn = QPushButton("Закрыть")
         close_btn.clicked.connect(dialog.close)
         layout.addWidget(close_btn)
         dialog.exec()
-        
-    def _check_solution(self):
-        pass
-        
-    def _create_solver_tab(self):
-        solver_widget = QWidget()
-        layout = QVBoxLayout(solver_widget)
-        self.sudoku_grid = SudokuWidget()
-        self.sudoku_grid.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.sudoku_grid, stretch=1)
-        
-        solve_btn = QPushButton("Решить")
-        solve_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #66bb6a;
-                color: white;
-                font-size: 16px;
-                padding: 10px;
-                border: none;
-                border-radius: 4px;
-            }
-        """)
-        solve_btn.clicked.connect(self._solve_sudoku)
-        layout.addWidget(solve_btn)
-        
-        clear_btn = QPushButton("Очистить")
-        clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef5350;
-                color: white;
-                font-size: 14px;
-                padding: 8px;
-                border: none;
-                border-radius: 4px;
-            }
-        """)
-        clear_btn.clicked.connect(self._clear_board)
-        layout.addWidget(clear_btn)
-        
-        self.tabs.addTab(solver_widget, "Решатель")
         
     def _solve_sudoku(self):
         board = self.sudoku_grid.get_board()
@@ -623,16 +729,138 @@ class MainWindow(QMainWindow):
         self.sudoku_grid.reset_board()
         
     def _create_menu(self):
+        self.setStyleSheet("""
+            QMenuBar {
+                background-color: white;
+                color: #424242;
+                border-bottom: 1px solid #e0e0e0;
+                padding: 2px;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                color: #424242;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+            QMenuBar::item:selected {
+                background-color: #e3f2fd;
+                color: #424242;
+            }
+            QMenuBar::item:pressed {
+                background-color: #bbdefb;
+                color: #424242;
+            }
+            QMenu {
+                background-color: white;
+                color: #424242;
+                border: 1px solid #e0e0e0;
+                border-radius: 5px;
+                padding: 5px 0;
+            }
+            QMenu::item {
+                padding: 8px 25px;
+                color: #424242;
+            }
+            QMenu::item:selected {
+                background-color: #e3f2fd;
+                color: #424242;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #e0e0e0;
+                margin: 5px 10px;
+            }
+        """)
+        
         menu_bar = self.menuBar()
+        
         file_menu = menu_bar.addMenu("Файл")
         exit_action = file_menu.addAction("Выход")
-        exit_action.triggered.connect(self.close) 
+        exit_action.triggered.connect(self.close)
+        
         help_menu = menu_bar.addMenu("Справка")
+        
+        help_action = help_menu.addAction("Помощь")
+        help_action.triggered.connect(self._show_help)
+        
         about_action = help_menu.addAction("О программе")
         about_action.triggered.connect(self.show_about_dialog)
         
     def show_about_dialog(self):
-        QMessageBox.about(self, "О программе", "Судоку: Игра и Решатель\nУчебный проект практики 1 курса.")
+        QMessageBox.about(self, "О программе", "Судоку: Игра и Решатель\n")
+
+    def _show_help(self):
+        help_text = """
+        <h2>Как играть в Судоку</h2>
+        
+        <h3>Цель игры:</h3>
+        <p>Заполнить пустые клетки цифрами от 1 до 9 так, чтобы в каждой строке, 
+        каждом столбце и каждом квадрате 3x3 каждая цифра встречалась только один раз.</p>
+        
+        <h3>Управление:</h3>
+        <ul>
+            <li><b> Мышь:</b> нажмите на клетку для выбора</li>
+            <li><b> Клавиатура:</b> цифры 1-9 для ввода</li>
+            <li><b> Backspace/Delete:</b> удалить цифру из клетки</li>
+            <li><b> Стрелки:</b> перемещение между клетками</li>
+        </ul>
+        
+        <h3>Элементы интерфейса:</h3>
+        <ul>
+            <li><b> ↺ Отмена:</b> отменить последнее действие</li>
+            <li><b> ⌫ Очистить:</b> удалить цифру из выбранной клетки</li>
+            <li><b> 💡 Подсказка:</b> показать правильную цифру (максиум 3 подсказки)</li>
+            <li><b> Индикаторы снизу:</b> показывают, какие цифры нужно заполнить</li>
+        </ul>
+        
+        <h3>Правила:</h3>
+        <ul>
+            <li> У вас есть 3 жизни</li>
+            <li> При 3 ошибках игра заканчивается</li>
+            <li> Старайтесь решить быстрее для рекорда!</li>
+        </ul>
+        """
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Помощь")
+        dialog.resize(600, 500)
+
+        dialog.setStyleSheet("""
+        QDialog {
+            background-color: white;
+            color: black;
+            font-family: Arial, sans-serif;
+        }
+        QTextBrowser {
+            background-color: white;
+            color: black;
+            border: none;
+            font-size: 18px;
+        }
+        QPushButton {
+            background-color: #5c7cda;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 18px;
+        }
+        QPushButton:hover {
+            background-color: #4267c7;
+        }
+    """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        text_browser = QTextBrowser()
+        text_browser.setHtml(help_text)
+        layout.addWidget(text_browser)
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
         
     def save_profile(self):
         difficulty = 1
