@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QLabel, QMenuBar, QMessageBox, QPushButton,
     QHBoxLayout, QRadioButton, QButtonGroup, QDialog, QDialogButtonBox,
     QListWidget, QListWidgetItem, QLineEdit, QSizePolicy, QGridLayout,
-    QTextBrowser
+    QTextBrowser, QInputDialog
 )
 from PySide6.QtCore import Qt, QTime, QTimer
 from src.gui.sudoku_widget import SudokuWidget
@@ -18,9 +18,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Судоку")
         self.resize(1100, 750)
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(1000, 700)
         self.setMaximumSize(1600, 1200)
         self.setStyleSheet("background-color: white;")
+        self.saved_difficulty = 1
+        self.load_profile()
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
             QTabWidget::pane {
@@ -45,27 +47,95 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
         self.game_timer = None
         self.game_start_time = None
-        self.saved_difficulty = 1
         self.best_time = None
+        self.is_paused = False
+        self.total_elapsed_seconds = 0
+        self.elapsed_time_at_pause = 0
         self._create_game_tab()
         self._create_solver_tab()
         self._create_menu()
         self._apply_saved_difficulty()
         self._load_best_time()
+        self._update_records_display()
         
     def _load_best_time(self):
+        self._update_best_time_display()
+    
+    def _update_best_time_display(self):
+        difficulty = self._get_difficulty_text()
         records_file = "records.json"
+        
+        html = f"<b>🏆 Топ-3 ({difficulty}):</b><br>"
+        personal_best = None
+        
+        if os.path.exists(records_file):
+            try:
+                with open(records_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if not content:
+                        records = {}
+                    else:
+                        records = json.loads(content)
+                
+                if difficulty in records and records[difficulty]:
+                    for i, rec in enumerate(records[difficulty][:3]):
+                        mins, secs = divmod(rec['time'], 60)
+                        time_str = f"{mins:02d}:{secs:02d}"
+                        if rec['name'] == self.player_name:
+                            html += f"<span style='color: #0066ff; font-weight: bold;'>{i+1}. {rec['name']} — {time_str}</span><br>"
+                        else:
+                            html += f"{i+1}. {rec['name']} — {time_str}<br>"
+                    
+                    for rec in records[difficulty]:
+                        if rec['name'] == self.player_name:
+                            personal_best = rec['time']
+                            break
+            except (json.JSONDecodeError, KeyError):
+                pass
+                
+        if personal_best is not None:
+            mins, secs = divmod(personal_best, 60)
+            html += f"<br><b>Ваш рекорд:</b> {mins:02d}:{secs:02d}"
+        else:
+            html += "<br><i style='color: #9e9e9e;'>У вас пока нет рекордов</i>"
+            
+        self.records_label.setText(html)
+
+    def _update_records_display(self):
+        difficulty = self._get_difficulty_text()
+        records_file = "records.json"
+        
+        html = f"<b>🏆 Топ-3 ({difficulty}):</b><br>"
+        personal_best = None
+        
         if os.path.exists(records_file):
             try:
                 with open(records_file, 'r', encoding='utf-8') as f:
                     records = json.load(f)
-                if records:
-                    self.best_time = records[0]['time']
-                    minutes = self.best_time // 60
-                    seconds = self.best_time % 60
-                    self.best_time_label.setText(f"🏆 Рекорд: {minutes:02d}:{seconds:02d}")
+                
+                if difficulty in records and records[difficulty]:
+                    for i, rec in enumerate(records[difficulty][:3]):
+                        mins, secs = divmod(rec['time'], 60)
+                        time_str = f"{mins:02d}:{secs:02d}"
+                        if rec['name'] == self.player_name:
+                            html += f"<span style='color: #0066ff; font-weight: bold;'>{i+1}. {rec['name']} — {time_str}</span><br>"
+                        else:
+                            html += f"{i+1}. {rec['name']} — {time_str}<br>"
+                    
+                    for rec in records[difficulty]:
+                        if rec['name'] == self.player_name:
+                            personal_best = rec['time']
+                            break
             except:
                 pass
+                
+        if personal_best is not None:
+            mins, secs = divmod(personal_best, 60)
+            html += f"<br><b>Ваш рекорд:</b> {mins:02d}:{secs:02d}"
+        else:
+            html += "<br><i style='color: #9e9e9e;'>У вас пока нет рекордов</i>"
+            
+        self.records_label.setText(html)
                 
     def _apply_saved_difficulty(self):
         if self.saved_difficulty == 0:
@@ -79,7 +149,7 @@ class MainWindow(QMainWindow):
         game_widget = QWidget()
         main_layout = QHBoxLayout(game_widget)
         main_layout.setSpacing(40)
-        main_layout.setContentsMargins(40, 40, 40, 40)
+        main_layout.setContentsMargins(15, 40, 40, 40)
         
         left_panel = QWidget()
         left_panel.setMaximumWidth(700)
@@ -90,13 +160,15 @@ class MainWindow(QMainWindow):
         top_layout = QHBoxLayout()
         top_layout.setSpacing(20)
         
-        self.best_time_label = QLabel("🏆 Рекорд: 00:00")
-        self.best_time_label.setStyleSheet("font-size: 24px; color: #757575;")
-        top_layout.addWidget(self.best_time_label)
+        self.records_label = QLabel()
+        self.records_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.records_label.setStyleSheet("font-size: 14px; color: #424242; line-height: 1.5;")
+        self.records_label.setWordWrap(True)
+        top_layout.addWidget(self.records_label)
         top_layout.addStretch()
         
         level_label = QLabel("Уровень:")
-        level_label.setStyleSheet("font-size: 20px; color: #424242; font-weight: bold;")
+        level_label.setStyleSheet("font-size: 22px; color: #424242; font-weight: bold;")
         top_layout.addWidget(level_label)
         
         self.difficulty_group = QButtonGroup()
@@ -108,7 +180,7 @@ class MainWindow(QMainWindow):
             radio.setStyleSheet("""
                 QRadioButton {
                     color: #424242;
-                    font-size: 15px;
+                    font-size: 18px;
                     spacing: 6px;
                 }
                 QRadioButton::indicator {
@@ -118,6 +190,9 @@ class MainWindow(QMainWindow):
             """)
             self.difficulty_group.addButton(radio)
             top_layout.addWidget(radio)
+            radio.toggled.connect(self.save_profile)
+            radio.toggled.connect(self._update_best_time_display)
+            radio.toggled.connect(self._update_records_display)
 
         self.medium_radio.setChecked(True)
         left_layout.addLayout(top_layout)
@@ -129,32 +204,11 @@ class MainWindow(QMainWindow):
         self.game_grid.hints_used.connect(self._on_hints_used)
         self.game_grid.board_changed.connect(self._update_remaining_numbers)
         left_layout.addWidget(self.game_grid, stretch=1, alignment=Qt.AlignCenter)
-        
-        remaining_layout = QHBoxLayout()
-        remaining_layout.setSpacing(8)
-        remaining_layout.setAlignment(Qt.AlignCenter)
-        self.remaining_indicators = []
-        
-        for i in range(1, 10):
-            indicator = QLabel()
-            indicator.setFixedSize(40, 40)
-            indicator.setAlignment(Qt.AlignCenter)
-            indicator.setStyleSheet("""
-                QLabel {
-                    background-color: #f5f7fa;
-                    border-radius: 8px;
-                    font-size: 18px;
-                    color: #2979ff;
-                    font-weight: bold;
-                }
-            """)
-            remaining_layout.addWidget(indicator)
-            self.remaining_indicators.append(indicator)
-        
-        left_layout.addLayout(remaining_layout)
+
         main_layout.addWidget(left_panel, stretch=2)
         
         right_panel = QWidget()
+        right_panel.setMinimumWidth(280)
         right_panel.setMaximumWidth(320)
         right_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         right_layout = QVBoxLayout(right_panel)
@@ -295,24 +349,25 @@ class MainWindow(QMainWindow):
             row = (i - 1) // 3
             col = (i - 1) % 3
             btn = QPushButton(str(i))
-            btn.setFixedSize(75, 65)
+            btn.setFixedSize(100, 90)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f5f7fa;
-                    border: none;
-                    border-radius: 10px;
-                    font-size: 26px;
-                    color: #2979ff;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #e3f2fd;
-                }
-                QPushButton:pressed {
-                    background-color: #bbdefb;
-                }
-            """)
+                    QPushButton {
+                        background-color: #f5f7fa;
+                        border: none;
+                        border-radius: 10px;
+                        font-size: 36px;
+                        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                        font-weight: 300;
+                        color: #0066ff;
+                    }
+                    QPushButton:hover {
+                        background-color: #e3f2fd;
+                    }
+                    QPushButton:pressed {
+                        background-color: #bbdefb;
+                    }
+                """)
             btn.clicked.connect(lambda checked, num=i: self._input_number(num))
             number_grid.addWidget(btn, row, col)
             self.number_buttons.append(btn)
@@ -324,8 +379,8 @@ class MainWindow(QMainWindow):
         solver_buttons_layout.setSpacing(10)
         
         send_to_solver_btn = QPushButton("📤 Скопировать в решатель")
-        send_to_solver_btn.setFixedHeight(40)
-        send_to_solver_btn.setToolTip("Скопировать текущее состояние в решатель для анализа")
+        send_to_solver_btn.setFixedHeight(50)
+        send_to_solver_btn.setToolTip("Скопировать текущее поле игры во вкладку Решателя")
         send_to_solver_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f5f7fa;
@@ -343,8 +398,8 @@ class MainWindow(QMainWindow):
         send_to_solver_btn.clicked.connect(self._send_to_solver)
         solver_buttons_layout.addWidget(send_to_solver_btn)
         
-        show_solution_btn = QPushButton("👁️ Показать Решение")
-        show_solution_btn.setFixedHeight(40)
+        show_solution_btn = QPushButton("✅ Показать Решение")
+        show_solution_btn.setFixedHeight(50)
         show_solution_btn.setToolTip("Показать правильное решение в решателе")
         show_solution_btn.setStyleSheet("""
             QPushButton {
@@ -371,6 +426,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(separator)
         
         new_game_btn = QPushButton("Новая игра")
+        new_game_btn.setMinimumHeight(40)
         new_game_btn.setStyleSheet("""
             QPushButton {
                 background-color: #5c7cda;
@@ -458,31 +514,39 @@ class MainWindow(QMainWindow):
         
     def _update_remaining_numbers(self):
         counts = self.game_grid.get_numbers_count()
-        for i, indicator in enumerate(self.remaining_indicators):
+        
+        for i, btn in enumerate(self.number_buttons):
             num = i + 1
-            remaining = 9 - counts[num]
-            if remaining > 0:
-                indicator.setText(str(num))
-                indicator.setEnabled(True)
-                indicator.setStyleSheet("""
-                    QLabel {
-                        background-color: #f5f7fa;
-                        border-radius: 8px;
-                        font-size: 18px;
-                        color: #2979ff;
-                        font-weight: bold;
+            
+            if counts[num] >= 9:
+                btn.setEnabled(False)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #e0e0e0;
+                        border: none;
+                        border-radius: 10px;
+                        font-size: 32px;
+                        color: #9e9e9e;
+                        font-weight: normal;
                     }
                 """)
             else:
-                indicator.setText(str(num))
-                indicator.setEnabled(False)
-                indicator.setStyleSheet("""
-                    QLabel {
-                        background-color: #e0e0e0;
-                        border-radius: 8px;
-                        font-size: 18px;
-                        color: #9e9e9e;
-                        font-weight: bold;
+                btn.setEnabled(True)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #f5f7fa;
+                        border: none;
+                        border-radius: 10px;
+                        font-size: 36px;
+                        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                        font-weight: 300;
+                        color: #0066ff;
+                    }
+                    QPushButton:hover {
+                        background-color: #e3f2fd;
+                    }
+                    QPushButton:pressed {
+                        background-color: #bbdefb;
                     }
                 """)
             
@@ -496,6 +560,7 @@ class MainWindow(QMainWindow):
     def _new_game(self):
         self.game_grid.reset_board()
         self.time_value_label.setText("00:00")
+        self.total_elapsed_seconds = 0
         self.errors_value_label.setText("0/3")
         
         difficulty = self._get_difficulty()
@@ -600,15 +665,14 @@ class MainWindow(QMainWindow):
         if self.game_timer is None:
             self.game_timer = QTimer()
             self.game_timer.timeout.connect(self._update_timer)
-        self.game_start_time = QTime.currentTime()
+        self.total_elapsed_seconds = 0
         self.game_timer.start(1000)
         
     def _update_timer(self):
-        if self.game_start_time:
-            elapsed = self.game_start_time.secsTo(QTime.currentTime())
-            minutes = elapsed // 60
-            seconds = elapsed % 60
-            self.time_value_label.setText(f"{minutes:02d}:{seconds:02d}")
+        self.total_elapsed_seconds += 1
+        minutes = self.total_elapsed_seconds // 60
+        seconds = self.total_elapsed_seconds % 60
+        self.time_value_label.setText(f"{minutes:02d}:{seconds:02d}")
             
     def _on_error_made(self, lives_left):
         errors_count = 3 - lives_left
@@ -616,52 +680,9 @@ class MainWindow(QMainWindow):
         if lives_left <= 0:
             if self.game_timer:
                 self.game_timer.stop()
-            msg_box = QMessageBox(self)
-            msg_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: white;
-                    color: black;
-                }
-                QMessageBox QLabel {
-                    color: black;
-                    font-size: 14px;
-                }
-                QMessageBox QPushButton {
-                    background-color: #5c7cda;
-                    color: white;
-                    padding: 8px 20px;
-                    border: none;
-                    border-radius: 4px;
-                    min-width: 100px;
-                }
-                QMessageBox QPushButton:hover {
-                    background-color: #4267c7;
-                }
-            """)
-            msg_box.setIcon(QMessageBox.Icon.Critical)
-            msg_box.setWindowTitle("Игра окончена")
-            msg_box.setText("Вы сделали 3 ошибки")
-            msg_box.setInformativeText("Начать новую игру?")
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
-            if msg_box.exec() == QMessageBox.StandardButton.Yes:
-                self._new_game()
                 
-    def _on_game_over(self, is_win):
-        if self.game_timer:
-            self.game_timer.stop()
-        if is_win:
-            elapsed = self.game_start_time.secsTo(QTime.currentTime())
-            minutes = elapsed // 60
-            seconds = elapsed % 60
-            time_str = f"{minutes}:{seconds:02d}"
-            
-            if self.best_time is None or elapsed < self.best_time:
-                self.best_time = elapsed
-                self.best_time_label.setText(f"Рекорд: {time_str}")
-            
             dialog = QDialog(self)
-            dialog.setWindowTitle("Победа!")
+            dialog.setWindowTitle("Игра окончена")
             dialog.setStyleSheet("""
                 QDialog {
                     background-color: white;
@@ -669,67 +690,179 @@ class MainWindow(QMainWindow):
                 }
                 QLabel {
                     color: black;
+                    font-size: 16px;
+                }
+                QPushButton {
+                    background-color: #5c7cda;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    min-width: 80px;
+                }
+                QPushButton:hover {
+                    background-color: #4267c7;
+                }
+                QPushButton#noBtn {
+                    background-color: #ef5350;
+                }
+                QPushButton#noBtn:hover {
+                    background-color: #e53935;
+                }
+            """)
+            
+            layout = QVBoxLayout(dialog)
+            layout.setSpacing(20)
+            
+            msg_label = QLabel("Вы сделали 3 ошибки.\nНачать новую игру?")
+            msg_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(msg_label)
+            
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
+            
+            yes_btn = QPushButton("Да")
+            yes_btn.clicked.connect(dialog.accept)
+            
+            no_btn = QPushButton("Нет")
+            no_btn.setObjectName("noBtn")
+            no_btn.clicked.connect(dialog.reject)
+            
+            btn_layout.addWidget(yes_btn)
+            btn_layout.addWidget(no_btn)
+            btn_layout.addStretch()
+            
+            layout.addLayout(btn_layout)
+            
+            if dialog.exec() == QDialog.Accepted:
+                self._new_game()
+                
+    def _on_game_over(self, is_win):
+        if self.game_timer:
+            self.game_timer.stop()
+        if is_win:
+            elapsed = self.total_elapsed_seconds
+            minutes = elapsed // 60
+            seconds = elapsed % 60
+            time_str = f"{minutes}:{seconds:02d}"
+            
+            if self.best_time is None or elapsed < self.best_time:
+                self.best_time = elapsed
+                self._update_records_display()
+            
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Победа!")
+            dialog.resize(450, 300)
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: white;
+                    color: black;
+                }
+                QLabel {
+                    color: black;
+                    font-size: 18px;
                 }
                 QLineEdit {
                     background-color: white;
                     color: black;
                     border: 1px solid #ccc;
-                    padding: 5px;
+                    padding: 10px;
+                    font-size: 16px;
+                    border-radius: 4px;
                 }
                 QPushButton {
                     background-color: #5c7cda;
                     color: white;
-                    padding: 8px 20px;
+                    padding: 12px 24px;
                     border: none;
                     border-radius: 4px;
+                    font-size: 16px;
+                    min-width: 120px;
                 }
                 QPushButton:hover {
                     background-color: #4267c7;
                 }
+                QPushButton#cancelBtn {
+                    background-color: #9e9e9e;
+                }
+                QPushButton#cancelBtn:hover {
+                    background-color: #757575;
+                }
             """)
             layout = QVBoxLayout(dialog)
+            layout.setSpacing(20)
             
-            msg = QLabel(f"Поздравляем! Вы решили судоку!\nВремя: {time_str}")
-            msg.setStyleSheet("font-size: 16px; color: black;")
+            msg = QLabel(f"🎉 Поздравляем! Вы решили судоку!\nВремя: {time_str}")
+            msg.setAlignment(Qt.AlignCenter)
             layout.addWidget(msg)
             
             name_label = QLabel("Введите ваше имя для таблицы рекордов:")
-            name_label.setStyleSheet("color: black;")
+            name_label.setAlignment(Qt.AlignCenter)
             layout.addWidget(name_label)
             
             name_input = QLineEdit()
             name_input.setPlaceholderText("Ваше имя")
+            name_input.setText(self.player_name)
             layout.addWidget(name_input)
             
-            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-            buttons.accepted.connect(dialog.accept)
-            buttons.rejected.connect(dialog.reject)
-            layout.addWidget(buttons)
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
+            
+            save_btn = QPushButton("Сохранить")
+            save_btn.clicked.connect(dialog.accept)
+            
+            cancel_btn = QPushButton("Отмена")
+            cancel_btn.setObjectName("cancelBtn")
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            btn_layout.addWidget(save_btn)
+            btn_layout.addWidget(cancel_btn)
+            btn_layout.addStretch()
+            
+            layout.addLayout(btn_layout)
             
             if dialog.exec() == QDialog.Accepted:
-                player_name = name_input.text() or "Аноним"
+                player_name = name_input.text().strip() or "Игрок"
+                
+                if player_name != self.player_name:
+                    self.player_name = player_name
+                    self.save_profile() 
+                    
                 difficulty = self._get_difficulty_text()
                 self._save_record(player_name, difficulty, elapsed)
+                self._update_records_display()
                 
     def _save_record(self, name, difficulty, time_seconds):
         records_file = "records.json"
-        records = []
+        records = {}
+        
         if os.path.exists(records_file):
             try:
                 with open(records_file, 'r', encoding='utf-8') as f:
                     records = json.load(f)
             except:
-                records = []
-        records.append({"name": name, "difficulty": difficulty, "time": time_seconds})
-        records.sort(key=lambda x: x["time"])
-        records = records[:15]
+                records = {}
+        
+        if difficulty not in records:
+            records[difficulty] = []
+        
+        records[difficulty].append({
+            "name": name, 
+            "time": time_seconds
+        })
+        
+        records[difficulty].sort(key=lambda x: x["time"])
+        records[difficulty] = records[difficulty][:15]
+        
         with open(records_file, 'w', encoding='utf-8') as f:
             json.dump(records, f, ensure_ascii=False, indent=2)
             
     def _show_records(self):
         records_file = "records.json"
+        current_difficulty = self._get_difficulty_text()
         dialog = QDialog(self)
-        dialog.setWindowTitle("Таблица рекордов")
+        dialog.setWindowTitle(f"Таблица рекордов ({current_difficulty})")
         dialog.resize(400, 400)
         dialog.setStyleSheet("""
             QDialog {
@@ -756,24 +889,31 @@ class MainWindow(QMainWindow):
             }
         """)
         layout = QVBoxLayout(dialog)
+        
         if not os.path.exists(records_file):
-            no_records_label = QLabel("Пока нет рекордов. Будьте первым!")
+            no_records_label = QLabel(f"Пока нет рекордов для уровня {current_difficulty}. Будьте первым!")
             layout.addWidget(no_records_label)
         else:
             try:
                 with open(records_file, 'r', encoding='utf-8') as f:
                     records = json.load(f)
-                list_widget = QListWidget()
-                for i, record in enumerate(records, 1):
-                    minutes = record["time"] // 60
-                    seconds = record["time"] % 60
-                    time_str = f"{minutes}:{seconds:02d}"
-                    item = QListWidgetItem(f"{i}. {record['name']} - {record['difficulty']} - {time_str}")
-                    list_widget.addItem(item)
-                layout.addWidget(list_widget)
+                
+                if current_difficulty in records and records[current_difficulty]:
+                    list_widget = QListWidget()
+                    for i, record in enumerate(records[current_difficulty], 1):
+                        minutes = record["time"] // 60
+                        seconds = record["time"] % 60
+                        time_str = f"{minutes}:{seconds:02d}"
+                        item = QListWidgetItem(f"{i}. {record['name']} - {time_str}")
+                        list_widget.addItem(item)
+                    layout.addWidget(list_widget)
+                else:
+                    no_records_label = QLabel(f"Пока нет рекордов для уровня {current_difficulty}. Будьте первым!")
+                    layout.addWidget(no_records_label)
             except:
                 error_label = QLabel("Ошибка загрузки рекордов")
                 layout.addWidget(error_label)
+        
         close_btn = QPushButton("Закрыть")
         close_btn.clicked.connect(dialog.close)
         layout.addWidget(close_btn)
@@ -814,7 +954,7 @@ class MainWindow(QMainWindow):
         else:
             self.animation_timer.stop()
             self.solve_btn.setEnabled(True)
-            QMessageBox.information(self, "Успех", "Судоку решено!")
+            QMessageBox.information(self, "✅ Успех", "Судоку решено!")
         
     def _clear_board(self):
         self.solver_grid.clear_board()
@@ -866,8 +1006,15 @@ class MainWindow(QMainWindow):
         
         menu_bar = self.menuBar()
         
-        file_menu = menu_bar.addMenu("Файл")
-        exit_action = file_menu.addAction("Выход")
+        game_menu = menu_bar.addMenu("Игра")
+        
+        pause_action = game_menu.addAction("⏸ Пауза")
+        pause_action.triggered.connect(self._toggle_pause)
+        pause_action.setShortcut("Esc")
+        
+        game_menu.addSeparator()
+        
+        exit_action = game_menu.addAction("Выход")
         exit_action.triggered.connect(self.close)
         
         help_menu = menu_bar.addMenu("Справка")
@@ -879,11 +1026,65 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
         
     def show_about_dialog(self):
-        QMessageBox.about(self, "О программе", "Судоку: Игра и Решатель\n")
+        about_text = (
+            "<h2>Судоку: Игра и Решатель</h2>"
+            "<p><b>Описание:</b></p>"
+            "<p>Классическая игра Судоку со встроенным решателем."
+            "<p><b>Возможности:</b></p>"
+            "<ul>"
+            "<li>Три уровня сложности: лёгкий, средний, сложный</li>"
+            "<li>Таблица рекордов</li>"
+            "<li>Система подсказок и режим заметок</li>"
+            "<li>Встроенный решатель</li>"
+            "<li>Сохранение профиля игрока</li>"
+            "</ul>"
+            "<p><b>Технологии:</b> Python, PySide6 (Qt)</p>"
+            "<p><b>Автор:</b> Ким Денис, Томский политехнический университет, «Программная инженерия», 1 курс бакалавриата</p>"
+            "<b>Учебная практика по развитию цифровых компетенций, 2026 г.<br>"
+        )
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("О программе")
+        dialog.resize(550, 500)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                color: black;
+            }
+            QTextBrowser {
+                background-color: white;
+                color: black;
+                border: none;
+                font-size: 18px;
+            }
+            QPushButton {
+                background-color: #5c7cda;
+                color: white;
+                padding: 12px 24px;
+                border: none;
+                border-radius: 4px;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: #4267c7;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        text_browser = QTextBrowser()
+        text_browser.setHtml(about_text)
+        layout.addWidget(text_browser)
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
 
     def _show_help(self):
         help_text = """
-        <h2>Как играть в Судоку</h2>
+        <h2>Как играть в Судоку?</h2>
         
         <h3>Цель игры:</h3>
         <p>Заполнить пустые клетки цифрами от 1 до 9 так, чтобы в каждой строке, 
@@ -895,21 +1096,21 @@ class MainWindow(QMainWindow):
             <li><b> Клавиатура:</b> цифры 1-9 для ввода</li>
             <li><b> Backspace/Delete:</b> удалить цифру из клетки</li>
             <li><b> Стрелки:</b> перемещение между клетками</li>
+            <li><b> Esc:</b> пауза</li>
         </ul>
         
         <h3>Элементы интерфейса:</h3>
         <ul>
             <li><b> ↺ Отмена:</b> отменить последнее действие</li>
             <li><b> ⌫ Очистить:</b> удалить цифру из выбранной клетки</li>
-            <li><b> 💡 Подсказка:</b> показать правильную цифру (максиум 3 подсказки)</li>
-            <li><b> Индикаторы снизу:</b> показывают, какие цифры нужно заполнить</li>
+            <li><b> 💡 Подсказка:</b> показать правильную цифру в выбранной клетке (максиум 3 подсказки)</li>
         </ul>
         
-        <h3>Правила:</h3>
+        <h3></h3>
         <ul>
             <li> У вас есть 3 жизни</li>
             <li> При 3 ошибках игра заканчивается</li>
-            <li> Старайтесь решить быстрее для рекорда!</li>
+            <li> Развивайтесь и устанавливайте новые рекорды!</li>
         </ul>
         """
         
@@ -981,7 +1182,7 @@ class MainWindow(QMainWindow):
         if not is_valid_board(board):
             QMessageBox.critical(
                 self, 
-                "Ошибка", 
+                "❌ Ошибка", 
                 "Текущее состояние поля нарушает правила судоку. Невозможно показать решение."
             )
             self.game_grid.setFocus()
@@ -990,7 +1191,7 @@ class MainWindow(QMainWindow):
         board_copy = [row[:] for row in board]
         
         if not solve(board_copy):
-            QMessageBox.warning(self, "Ошибка", "У этого судоку нет решения.")
+            QMessageBox.warning(self, "❌ Ошибка", "У этого судоку нет решения.")
             self.game_grid.setFocus()
             return
             
@@ -1013,28 +1214,90 @@ class MainWindow(QMainWindow):
         self.animation_timer.start(50)
         
         self.game_grid.setFocus()
+
+    def _toggle_pause(self):
+        if not self.game_timer or not self.game_timer.isActive():
+            return
+        if self.is_paused:
+            return
+            
+        self.is_paused = True
+        self.game_timer.stop()
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Пауза")
+        dialog.resize(300, 150)
+        dialog.setStyleSheet("""
+            QDialog { 
+                background-color: white; 
+                color: black; 
+            }
+            QLabel { 
+                font-size: 22px; 
+                color: #424242; 
+                font-weight: bold; 
+            }
+            QPushButton { 
+                background-color: #5c7cda; 
+                color: white; 
+                padding: 10px 20px; 
+                border: none; 
+                border-radius: 4px; 
+                font-size: 16px; 
+            }
+            QPushButton:hover { 
+                background-color: #4267c7; 
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(20)
+        
+        msg = QLabel("⏸ Игра на паузе")
+        msg.setAlignment(Qt.AlignCenter)
+        layout.addWidget(msg)
+        
+        resume_btn = QPushButton("Продолжить")
+        resume_btn.clicked.connect(dialog.accept)
+        layout.addWidget(resume_btn)
+        
+        dialog.exec()
+        
+        self.is_paused = False
+        self.game_timer.start(1000)
         
     def save_profile(self):
         difficulty = 1
-        if self.easy_radio.isChecked(): difficulty = 0
-        elif self.hard_radio.isChecked(): difficulty = 2
+        if hasattr(self, 'easy_radio'):
+            if self.easy_radio.isChecked(): difficulty = 0
+            elif self.hard_radio.isChecked(): difficulty = 2
         
-        profile = {"window_size": [self.width(), self.height()], "last_difficulty": difficulty}
+        profile = {
+            "window_size": [self.width(), self.height()], 
+            "last_difficulty": difficulty,
+            "player_name": getattr(self, 'player_name', 'Игрок')
+        }
         with open("profile.json", 'w', encoding='utf-8') as f:
             json.dump(profile, f, ensure_ascii=False, indent=2)
             
     def load_profile(self):
+        self.player_name = "Игрок"
+        
         if os.path.exists("profile.json"):
             try:
                 with open("profile.json", 'r', encoding='utf-8') as f:
-                    profile = json.load(f)
-                if "window_size" in profile:
-                    self.resize(profile["window_size"][0], profile["window_size"][1])
-                self.saved_difficulty = profile.get("last_difficulty", 1)
+                    content = f.read().strip()
+                    if content:
+                        profile = json.loads(content)
+                        if "window_size" in profile:
+                            self.resize(profile["window_size"][0], profile["window_size"][1])
+                        self.saved_difficulty = profile.get("last_difficulty", 1)
+                        
+                        saved_name = profile.get("player_name", "")
+                        if saved_name and saved_name.strip():
+                            self.player_name = saved_name.strip()
             except:
-                self.saved_difficulty = 1
-        else:
-            self.saved_difficulty = 1
+                pass
             
     def closeEvent(self, event):
         self.save_profile()

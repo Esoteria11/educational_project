@@ -258,6 +258,9 @@ class SudokuWidget(QWidget):
                 key = event.key()
                 if Qt.Key_1 <= key <= Qt.Key_9:
                     num = key - Qt.Key_0
+                    counts = self.get_numbers_count()
+                    if counts[num] >= 9:
+                        return
                     self._try_set_number(row, col, num)
                 elif key in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_0):
                     self.save_state()
