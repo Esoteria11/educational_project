@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTime, QTimer
 from src.gui.sudoku_widget import SudokuWidget
+from src.gui.solver_widget import SolverWidget
 from src.logic.solver import solve, is_valid_board
 from src.logic.generator import generate_sudoku
 import json
@@ -295,6 +296,7 @@ class MainWindow(QMainWindow):
             col = (i - 1) % 3
             btn = QPushButton(str(i))
             btn.setFixedSize(75, 65)
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.setStyleSheet("""
                 QPushButton {
                     background-color: #f5f7fa;
@@ -317,6 +319,56 @@ class MainWindow(QMainWindow):
         
         right_layout.addLayout(number_grid)
         right_layout.addStretch()
+
+        solver_buttons_layout = QVBoxLayout()
+        solver_buttons_layout.setSpacing(10)
+        
+        send_to_solver_btn = QPushButton("📤 Скопировать в решатель")
+        send_to_solver_btn.setFixedHeight(40)
+        send_to_solver_btn.setToolTip("Скопировать текущее состояние в решатель для анализа")
+        send_to_solver_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f5f7fa;
+                color: #424242;
+                font-size: 13px;
+                padding: 8px 15px;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e3f2fd;
+            }
+        """)
+        send_to_solver_btn.clicked.connect(self._send_to_solver)
+        solver_buttons_layout.addWidget(send_to_solver_btn)
+        
+        show_solution_btn = QPushButton("👁️ Показать Решение")
+        show_solution_btn.setFixedHeight(40)
+        show_solution_btn.setToolTip("Показать правильное решение в решателе")
+        show_solution_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f5f7fa;
+                color: #424242;
+                font-size: 13px;
+                padding: 8px 15px;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e3f2fd;
+            }
+        """)
+        show_solution_btn.clicked.connect(self._show_solution)
+        solver_buttons_layout.addWidget(show_solution_btn)
+        
+        right_layout.addLayout(solver_buttons_layout)
+        
+        separator = QWidget()
+        separator.setFixedHeight(1)
+        separator.setStyleSheet("background-color: #e0e0e0; margin: 10px 0;")
+        right_layout.addWidget(separator)
         
         new_game_btn = QPushButton("Новая игра")
         new_game_btn.setStyleSheet("""
@@ -342,37 +394,56 @@ class MainWindow(QMainWindow):
     def _create_solver_tab(self):
         solver_widget = QWidget()
         layout = QVBoxLayout(solver_widget)
-        self.sudoku_grid = SudokuWidget()
-        layout.addWidget(self.sudoku_grid, stretch=1, alignment=Qt.AlignCenter)
+        layout.setContentsMargins(40, 40, 40, 40)
         
-        solve_btn = QPushButton("Решить")
+        self.solver_grid = SolverWidget()
+        layout.addWidget(self.solver_grid, stretch=1, alignment=Qt.AlignCenter)
+        
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(15)
+        
+        solve_btn = QPushButton("Решить пошагово")
         solve_btn.setStyleSheet("""
             QPushButton {
                 background-color: #66bb6a;
                 color: white;
                 font-size: 16px;
-                padding: 10px;
+                padding: 12px 24px;
                 border: none;
-                border-radius: 4px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #55a859;
+            }
+            QPushButton:disabled {
+                background-color: #e0e0e0;
+                color: #9e9e9e;
             }
         """)
         solve_btn.clicked.connect(self._solve_sudoku)
-        layout.addWidget(solve_btn)
+        buttons_layout.addWidget(solve_btn)
+        self.solve_btn = solve_btn
         
         clear_btn = QPushButton("Очистить")
         clear_btn.setStyleSheet("""
             QPushButton {
                 background-color: #ef5350;
                 color: white;
-                font-size: 14px;
-                padding: 8px;
+                font-size: 16px;
+                padding: 12px 24px;
                 border: none;
-                border-radius: 4px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e53935;
             }
         """)
         clear_btn.clicked.connect(self._clear_board)
-        layout.addWidget(clear_btn)
+        buttons_layout.addWidget(clear_btn)
         
+        layout.addLayout(buttons_layout)
         self.tabs.addTab(solver_widget, "Решатель")
         
     def _get_difficulty(self):
@@ -420,6 +491,7 @@ class MainWindow(QMainWindow):
             row, col = self.game_grid.selected_cell
             if not self.game_grid.fixed[row][col]:
                 self.game_grid._try_set_number(row, col, num)
+        self.game_grid.setFocus()
                 
     def _new_game(self):
         self.game_grid.reset_board()
@@ -430,16 +502,13 @@ class MainWindow(QMainWindow):
         puzzle, solution = generate_sudoku(difficulty)
         
         self.game_grid.set_board(puzzle, solution, is_game_mode=True)
-        self.sudoku_grid.set_board(puzzle)
         
         for row in range(9):
             for col in range(9):
                 if puzzle[row][col] != 0:
                     self.game_grid.fixed[row][col] = True
-                    self.sudoku_grid.fixed[row][col] = True
         
         self.game_grid.update()
-        self.sudoku_grid.update()
         self._start_timer()
         self._update_remaining_numbers()
         
@@ -483,10 +552,6 @@ class MainWindow(QMainWindow):
         if self.game_grid.selected_cell:
             row, col = self.game_grid.selected_cell
             if not self.game_grid.fixed[row][col]:
-                if self.game_grid.solution and self.game_grid.board[row][col] == self.game_grid.solution[row][col]:
-                    self.game_grid.setFocus()
-                    return
-                    
                 self.game_grid.save_state()
                 self.game_grid.board[row][col] = 0
                 if (row, col) in self.game_grid.errors:
@@ -715,18 +780,45 @@ class MainWindow(QMainWindow):
         dialog.exec()
         
     def _solve_sudoku(self):
-        board = self.sudoku_grid.get_board()
+        board = self.solver_grid.get_board()
+        from src.logic.solver import solve, is_valid_board
+        
         if not is_valid_board(board):
-            QMessageBox.critical(self, "Ошибка ввода", "Исходные данные нарушают правила судоку!")
+            QMessageBox.critical(self, "❌ Ошибка ввода", "Исходные данные нарушают правила судоку!")
             return
-        if solve(board):
-            self.sudoku_grid.set_board(board)
-            QMessageBox.information(self, "Успех", "Судоку решено!")
-        else:
-            QMessageBox.warning(self, "Ошибка", "Решение не найдено.")
             
+        board_copy = [row[:] for row in board]
+        
+        if not solve(board_copy):
+            QMessageBox.warning(self, "❌ Ошибка", "У этого судоку нет решения.")
+            return
+            
+        self.steps_to_animate = []
+        for r in range(9):
+            for c in range(9):
+                if board[r][c] == 0 and board_copy[r][c] != 0:
+                    self.steps_to_animate.append((r, c, board_copy[r][c]))
+                    
+        self.solve_btn.setEnabled(False)
+        self.animation_index = 0
+        
+        self.animation_timer = QTimer()
+        self.animation_timer.timeout.connect(self._animation_step)
+        self.animation_timer.start(50)
+
+    def _animation_step(self):
+        if self.animation_index < len(self.steps_to_animate):
+            r, c, num = self.steps_to_animate[self.animation_index]
+            self.solver_grid.set_cell(r, c, num)
+            self.animation_index += 1
+        else:
+            self.animation_timer.stop()
+            self.solve_btn.setEnabled(True)
+            QMessageBox.information(self, "Успех", "Судоку решено!")
+        
     def _clear_board(self):
-        self.sudoku_grid.reset_board()
+        self.solver_grid.clear_board()
+        self.solve_btn.setEnabled(True)
         
     def _create_menu(self):
         self.setStyleSheet("""
@@ -861,6 +953,66 @@ class MainWindow(QMainWindow):
         layout.addWidget(close_btn)
         
         dialog.exec()
+
+    def _copy_to_solver(self):
+        """Вспомогательный метод: копирует состояние игры в решатель"""
+        board = self.game_grid.get_board()
+        self.solver_grid.clear_board()
+        
+        for row in range(9):
+            for col in range(9):
+                if board[row][col] != 0:
+                    self.solver_grid.board[row][col] = board[row][col]
+                    self.solver_grid.initial_board[row][col] = board[row][col]
+        
+        self.solver_grid.update()
+
+    def _send_to_solver(self):
+        self._copy_to_solver()
+        self.tabs.setCurrentIndex(1)
+        self.game_grid.setFocus()
+            
+    def _show_solution(self):
+        self._copy_to_solver()
+        
+        board = self.solver_grid.get_board()
+        from src.logic.solver import solve, is_valid_board
+        
+        if not is_valid_board(board):
+            QMessageBox.critical(
+                self, 
+                "Ошибка", 
+                "Текущее состояние поля нарушает правила судоку. Невозможно показать решение."
+            )
+            self.game_grid.setFocus()
+            return
+            
+        board_copy = [row[:] for row in board]
+        
+        if not solve(board_copy):
+            QMessageBox.warning(self, "Ошибка", "У этого судоку нет решения.")
+            self.game_grid.setFocus()
+            return
+            
+        self.steps_to_animate = []
+        for r in range(9):
+            for c in range(9):
+                if board[r][c] == 0 and board_copy[r][c] != 0:
+                    self.steps_to_animate.append((r, c, board_copy[r][c]))
+                    
+        self.tabs.setCurrentIndex(1)
+        
+        self.solve_btn.setEnabled(False)
+        self.animation_index = 0
+        
+        if hasattr(self, 'animation_timer'):
+            self.animation_timer.stop()
+            
+        self.animation_timer = QTimer()
+        self.animation_timer.timeout.connect(self._animation_step)
+        self.animation_timer.start(50)
+        
+        self.game_grid.setFocus()
         
     def save_profile(self):
         difficulty = 1
